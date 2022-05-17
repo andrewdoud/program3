@@ -1,0 +1,2 @@
+#!/bin/bash
+./memSim addresses.txt FIFO 10
