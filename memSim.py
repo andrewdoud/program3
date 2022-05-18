@@ -4,16 +4,37 @@ import sys
 PAGE_SIZE = 256
 TLB_SIZE = 16
 
-# offset + page_num -> read 256 bytes
-
 def search_tlb(tlb, p):
     for i in range(len(tlb)):
         entry = tlb[i] # (p, f)
         if entry[0] == p:
-            return i 
+            return i
     return -1
 
-def fifo(addresses, num_frames: int, backing_store: BufferedReader):
+def fifo(next_f, num_frames, lru_q):
+    next_f += 1
+    if next_f >= num_frames:
+        next_f = 0
+    return next_f
+
+def lru(next_f, num_frames, lru_q):
+    return lru_q[0]
+
+def opt(next_f, num_frames):
+    return next_f
+
+def mem_sim(addresses, num_frames, backing_store, algorithm):
+    if algorithm == 'FIFO':
+        get_next_f = fifo
+    elif algorithm == 'LRU':
+        get_next_f = lru
+    elif algorithm == 'OPT':
+        get_next_f = opt
+    else:
+        raise(ValueError(f'Invalid algorithm: {algorithm}'))
+
+    ## Initialize everything
+    
     faults = fault_rate = hits = misses = hit_rate = 0 # Metrics
 
     # init tlb
@@ -30,10 +51,17 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
     # init frame -> p
     frame_p = [None] * num_frames
 
+    # init lru queue (used across algos b/c doesn't affect anything unless lru)
+    lru_q = list(range(num_frames))
+
+    ## Start reading addresses
+
     for addr in addresses:
+        # Get page num, offset and backing storage address
         p = addr // PAGE_SIZE # page number
         d = addr % PAGE_SIZE # page offset
-        bs_num = p * PAGE_SIZE
+        back_addr = p * PAGE_SIZE # backing storage address
+
         # Try to grab entry from tlb
         tlb_i = search_tlb(tlb, p) # (p, f)
         if tlb_i == -1 or tlb[tlb_i][1] is None: # if miss
@@ -42,13 +70,21 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
 
             # Check if valid in the page table
             if page_table[p][1] == 1: # if already in physical mem
+                # Get f from page table (soft miss)
                 f = page_table[p][0]
+
+                # Move lru queue since frame is touched
+                f_i = lru_q.index(f)
+                lru_q.pop(f_i)
+                lru_q.append(f)
+
                 # Retrieve from physical memory
                 phys_entry = phys_mem[f]
                 ref_byte_int = phys_entry[0]
                 hex_data = phys_entry[1]
-                print(f'{addr}, {ref_byte_int}, {f}, {hex_data}')
+
                 # Print all the stuff
+                print(f'{addr}, {ref_byte_int}, {p}, {f}, {hex_data}')
 
             else: # if not in physical mem yet, replace curr frame in physical mem
                 faults += 1
@@ -56,16 +92,16 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
                 f = next_f
 
                 # Retrieve data from backing store
-                backing_store.seek(bs_num, 0)
+                backing_store.seek(back_addr, 0)
                 hex_data = backing_store.read(PAGE_SIZE).hex().upper()
 
                 # Retrieve reference bit from backing store
-                backing_store.seek(bs_num + d, 0)
+                backing_store.seek(back_addr + d, 0)
                 ref_byte = backing_store.read(1)
                 ref_byte_int = int.from_bytes(ref_byte, 'little', signed=True)
 
                 # Print all the stuff
-                print(f'{addr}, {ref_byte_int}, {f}, {hex_data}')
+                print(f'{addr}, {ref_byte_int}, {p}, {f}, {hex_data}')
 
                 # Update page table
                 page_table[p] = (f, 1)
@@ -78,13 +114,18 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
                     if old_p_tlb != -1:
                         tlb[old_p_tlb] = (f, None) # Clear the old tlb entry (if exists)
 
+                # Make f point to new p
                 frame_p[f] = p
+                # Replace frame with new byte and data
                 phys_mem[f] = (ref_byte_int, hex_data)
+                
+                f_i = lru_q.index(f)
+                lru_q.pop(f_i)
+                lru_q.append(f)
 
-                # Increment the frame number (since FIFO goes to 0 if past end)
-                next_f += 1
-                if next_f >= num_frames:
-                    next_f = 0
+                # Get the next frame (depends on algorithm)
+                if algorithm == 'FIFO':
+                    next_f = get_next_f(next_f, num_frames, lru_q)
 
             # If p already in tlb, update tlb entry
             if tlb_i != -1:
@@ -100,35 +141,31 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
         else: # if hit
             hits += 1
             # print('hit')
+
             # Find in page table
             entry = tlb[tlb_i]
             f = entry[1]
+
+            # Move lru queue since frame is touched
+            f_i = lru_q.index(f)
+            lru_q.pop(f_i)
+            lru_q.append(f)
+
             # Retrieve from physical memory
             phys_entry = phys_mem[f]
             ref_byte_int = phys_entry[0]
             hex_data = phys_entry[1]
             # Print all the stuff
-            print(f'{addr}, {ref_byte_int}, {f}, {hex_data}')
+            print(f'{addr}, {ref_byte_int}, {p}, {f}, {hex_data}')
 
+        # Update next_f if using LRU (b/c hits & soft misses also change the next f)
+        if algorithm != 'FIFO':
+            next_f = get_next_f(next_f, num_frames, lru_q)
+
+    # Calc metrics
     fault_rate = faults / (misses + hits)
     hit_rate = hits / (misses + hits)
 
-    return faults, fault_rate, hits, misses, hit_rate
-
-def lru(addresses):
-    faults = 0
-    fault_rate = 0
-    hits = 0
-    misses = 0
-    hit_rate = 0
-    return faults, fault_rate, hits, misses, hit_rate
-
-def opt(addresses):
-    faults = 0
-    fault_rate = 0
-    hits = 0
-    misses = 0
-    hit_rate = 0
     return faults, fault_rate, hits, misses, hit_rate
 
 def get_addresses(ref_seq_filename):
@@ -142,21 +179,15 @@ def get_addresses(ref_seq_filename):
 
 def main(argv):
     ref_seq_filename = argv[1]
-    algo = argv[2]
+    algorithm = argv[2]
     num_frames = int(argv[3])
 
     addresses = get_addresses(ref_seq_filename)
 
     backing_store = open('BACKING_STORE.bin', 'rb')
     
-    if algo == 'FIFO':
-        page_faults, page_fault_rate, tlb_hits, tlb_misses, tlb_hit_rate = fifo(addresses, num_frames, backing_store)
-    elif algo == 'LRU':
-        page_faults, page_fault_rate, tlb_hits, tlb_misses, tlb_hit_rate = lru(addresses)
-    elif algo == 'OPT':
-        page_faults, page_fault_rate, tlb_hits, tlb_misses, tlb_hit_rate = opt(addresses)
-    else:
-        raise(ValueError(f'Invalid algorithm: {algo}'))
+    page_faults, page_fault_rate, tlb_hits, tlb_misses, tlb_hit_rate = \
+        mem_sim(addresses, num_frames, backing_store, algorithm)
     
     print(f'Number of Translated Addresses = {len(addresses)}')
     print(f'Page Faults = {page_faults}')
