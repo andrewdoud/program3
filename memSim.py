@@ -41,10 +41,10 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
             if page_table[p][1] == 1: # if already in physical mem
                 f = page_table[p][0]
                 # Retrieve from physical memory
-                hex_data = phys_mem[f]
-                print(f)
-                print(hex_data)
-                print()
+                phys_entry = phys_mem[f]
+                ref_byte_int = phys_entry[0]
+                hex_data = phys_entry[1]
+                print(f'{addr}, {ref_byte_int}, {f}, {hex_data}')
                 # Print all the stuff
 
             else: # if not in physical mem yet, replace curr frame in physical mem
@@ -89,13 +89,15 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
             hits += 1
             # Find in page table
             f = entry[1]
-            phys_mem[next_f]
-            print(phys_mem[next_f])
             # Retrieve from physical memory
+            phys_entry = phys_mem[f]
+            ref_byte_int = phys_entry[0]
+            hex_data = phys_entry[1]
             # Print all the stuff
+            print(f'{addr}, {ref_byte_int}, {f}, {hex_data}')
 
-    fault_rate = faults / misses
-    hit_rate = hits / misses
+    fault_rate = faults / (misses + hits)
+    hit_rate = hits / (misses + hits)
 
     return faults, fault_rate, hits, misses, hit_rate
 

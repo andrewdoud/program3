@@ -1,2 +1,2 @@
 #!/bin/bash
-./memSim addresses.txt FIFO 5
+./memSim fifo3.txt FIFO 5
