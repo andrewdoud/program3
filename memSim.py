@@ -2,20 +2,22 @@ from io import BufferedReader
 import sys
 
 PAGE_SIZE = 256
+TLB_SIZE = 16
 
 # offset + page_num -> read 256 bytes
 
 def search_tlb(tlb, p):
-    for entry in tlb:
-        if entry is not None and entry[0] == p:
-            return entry # (p, f)
-    return False
+    for i in range(len(tlb)):
+        entry = tlb[i] # (p, f)
+        if entry[0] == p:
+            return i 
+    return -1
 
 def fifo(addresses, num_frames: int, backing_store: BufferedReader):
     faults = fault_rate = hits = misses = hit_rate = 0 # Metrics
 
     # init tlb
-    tlb = [None] * 16
+    tlb = [(None, None)] * TLB_SIZE
     tlb_p = 0 # tlb pointer
 
     # init page table
@@ -33,10 +35,11 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
         d = addr % PAGE_SIZE # page offset
         bs_num = p * PAGE_SIZE
         # Try to grab entry from tlb
-        entry = search_tlb(tlb, p)
-        if entry == False: # if miss
+        tlb_i = search_tlb(tlb, p) # (p, f)
+        if tlb_i == -1 or tlb[tlb_i][1] is None: # if miss
             misses += 1
-            
+            # print('miss')
+
             # Check if valid in the page table
             if page_table[p][1] == 1: # if already in physical mem
                 f = page_table[p][0]
@@ -49,7 +52,9 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
 
             else: # if not in physical mem yet, replace curr frame in physical mem
                 faults += 1
+                # print('fault')
                 f = next_f
+
                 # Retrieve data from backing store
                 backing_store.seek(bs_num, 0)
                 hex_data = backing_store.read(PAGE_SIZE).hex().upper()
@@ -61,14 +66,18 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
 
                 # Print all the stuff
                 print(f'{addr}, {ref_byte_int}, {f}, {hex_data}')
-                
+
                 # Update page table
                 page_table[p] = (f, 1)
 
                 # Update physical memory
                 if frame_p[f] is not None: # If phys mem already has entry in curr frame
                     old_p = frame_p[0]
-                    page_table[old_p] = (f, 0) # Clear the old page table entry
+                    page_table[old_p] = (f, None) # Clear the old page table entry
+                    old_p_tlb = search_tlb(tlb, old_p)
+                    if old_p_tlb != -1:
+                        tlb[old_p_tlb] = (f, None) # Clear the old tlb entry (if exists)
+
                 frame_p[f] = p
                 phys_mem[f] = (ref_byte_int, hex_data)
 
@@ -77,17 +86,22 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
                 if next_f >= num_frames:
                     next_f = 0
 
-            # Replace tlb entry
-            tlb[tlb_p] = (p, f)
-
-            # Increment tlb pointer (goes to 0 if past end)
-            tlb_p += 1
-            if tlb_p >= len(tlb)-1:
-                tlb_p = 0
+            # If p already in tlb, update tlb entry
+            if tlb_i != -1:
+                tlb[tlb_i] = (p, f)
+            # Else, replace tlb entry (fifo)
+            else:
+                tlb[tlb_p] = (p, f)
+                # Increment tlb pointer (goes to 0 if past end)
+                tlb_p += 1
+                if tlb_p >= TLB_SIZE:
+                    tlb_p = 0
 
         else: # if hit
             hits += 1
+            # print('hit')
             # Find in page table
+            entry = tlb[tlb_i]
             f = entry[1]
             # Retrieve from physical memory
             phys_entry = phys_mem[f]
