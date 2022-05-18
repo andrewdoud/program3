@@ -74,7 +74,7 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
 
                 # Increment the frame number (since FIFO goes to 0 if past end)
                 next_f += 1
-                if next_f > num_frames:
+                if next_f >= num_frames:
                     next_f = 0
 
             # Replace tlb entry
@@ -82,7 +82,7 @@ def fifo(addresses, num_frames: int, backing_store: BufferedReader):
 
             # Increment tlb pointer (goes to 0 if past end)
             tlb_p += 1
-            if tlb_p >= len(tlb):
+            if tlb_p >= len(tlb)-1:
                 tlb_p = 0
 
         else: # if hit
