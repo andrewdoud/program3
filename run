@@ -1,2 +1,2 @@
 #!/bin/bash
-./memSim lru3.txt LRU 3
+./memSim opt2.txt 5 OPT

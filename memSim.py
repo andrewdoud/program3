@@ -1,4 +1,3 @@
-from io import BufferedReader
 import sys
 
 PAGE_SIZE = 256
@@ -11,28 +10,36 @@ def search_tlb(tlb, p):
             return i
     return -1
 
-def fifo(next_f, num_frames, lru_q):
+def fifo(next_f, num_frames):
     next_f += 1
     if next_f >= num_frames:
         next_f = 0
     return next_f
 
-def lru(next_f, num_frames, lru_q):
+def lru(lru_q):
     return lru_q[0]
 
-def opt(next_f, num_frames):
-    return next_f
+def opt(next_addresses, frame_p):
+    next_ps = [addr // PAGE_SIZE for addr in next_addresses]
+    latest_f = None
+    time_to_latest_p = 0
+    for f in range(len(frame_p)):
+        p = frame_p[f]
+        # if the beginning sequence, just return the next f
+        if p is None:
+            return f
+        # if p will never get used again, break
+        if p not in next_ps:
+            return f
+        i = 1
+        for next_p in next_ps:
+            if next_p == p:
+                if i > time_to_latest_p: # Potential grading disputes here
+                    latest_f = f
+                    time_to_latest_p = i
+    return latest_f
 
 def mem_sim(addresses, num_frames, backing_store, algorithm):
-    if algorithm == 'FIFO':
-        get_next_f = fifo
-    elif algorithm == 'LRU':
-        get_next_f = lru
-    elif algorithm == 'OPT':
-        get_next_f = opt
-    else:
-        raise(ValueError(f'Invalid algorithm: {algorithm}'))
-
     ## Initialize everything
     
     faults = fault_rate = hits = misses = hit_rate = 0 # Metrics
@@ -56,17 +63,27 @@ def mem_sim(addresses, num_frames, backing_store, algorithm):
 
     ## Start reading addresses
 
-    for addr in addresses:
+    for i in range(len(addresses)):
+        addr = addresses[i]
         # Get page num, offset and backing storage address
         p = addr // PAGE_SIZE # page number
         d = addr % PAGE_SIZE # page offset
         back_addr = p * PAGE_SIZE # backing storage address
 
+        # Update next_f if not using FIFO
+        if algorithm == 'LRU':
+            next_f = lru(lru_q)
+        elif algorithm == 'OPT':
+            next_f = opt(addresses[i+1:], frame_p)
+        
+        print(frame_p)
+        print(tlb)
+
         # Try to grab entry from tlb
         tlb_i = search_tlb(tlb, p) # (p, f)
         if tlb_i == -1 or tlb[tlb_i][1] is None: # if miss
             misses += 1
-            # print('miss')
+            print('miss')
 
             # Check if valid in the page table
             if page_table[p][1] == 1: # if already in physical mem
@@ -88,7 +105,7 @@ def mem_sim(addresses, num_frames, backing_store, algorithm):
 
             else: # if not in physical mem yet, replace curr frame in physical mem
                 faults += 1
-                # print('fault')
+                print('fault')
                 f = next_f
 
                 # Retrieve data from backing store
@@ -108,11 +125,12 @@ def mem_sim(addresses, num_frames, backing_store, algorithm):
 
                 # Update physical memory
                 if frame_p[f] is not None: # If phys mem already has entry in curr frame
-                    old_p = frame_p[0]
+                    old_p = frame_p[f]
                     page_table[old_p] = (f, None) # Clear the old page table entry
                     old_p_tlb = search_tlb(tlb, old_p)
                     if old_p_tlb != -1:
-                        tlb[old_p_tlb] = (f, None) # Clear the old tlb entry (if exists)
+                        tlb.pop(old_p_tlb) # Clear the old tlb entry (if exists)
+                        tlb.append((None, None))
 
                 # Make f point to new p
                 frame_p[f] = p
@@ -123,24 +141,25 @@ def mem_sim(addresses, num_frames, backing_store, algorithm):
                 lru_q.pop(f_i)
                 lru_q.append(f)
 
-                # Get the next frame (depends on algorithm)
+                # Get the next frame if fifo (only changes next frame after a frame gets altered rather than any time a frame is touched)
                 if algorithm == 'FIFO':
-                    next_f = get_next_f(next_f, num_frames, lru_q)
+                    next_f = fifo(next_f, num_frames)
 
             # If p already in tlb, update tlb entry
             if tlb_i != -1:
-                tlb[tlb_i] = (p, f)
-            # Else, replace tlb entry (fifo)
-            else:
-                tlb[tlb_p] = (p, f)
-                # Increment tlb pointer (goes to 0 if past end)
-                tlb_p += 1
-                if tlb_p >= TLB_SIZE:
-                    tlb_p = 0
+                tlb.pop(tlb_i)
+                if tlb_i < tlb_p:
+                    tlb_p -= 1
+            # Add the new entry
+            tlb[tlb_p] = (p, f)
+            # Increment tlb pointer (goes to 0 if past end)
+            tlb_p += 1
+            if tlb_p >= TLB_SIZE:
+                tlb_p = 0
 
         else: # if hit
             hits += 1
-            # print('hit')
+            print('hit')
 
             # Find in page table
             entry = tlb[tlb_i]
@@ -157,10 +176,6 @@ def mem_sim(addresses, num_frames, backing_store, algorithm):
             hex_data = phys_entry[1]
             # Print all the stuff
             print(f'{addr}, {ref_byte_int}, {p}, {f}, {hex_data}')
-
-        # Update next_f if using LRU (b/c hits & soft misses also change the next f)
-        if algorithm != 'FIFO':
-            next_f = get_next_f(next_f, num_frames, lru_q)
 
     # Calc metrics
     fault_rate = faults / (misses + hits)
@@ -179,8 +194,8 @@ def get_addresses(ref_seq_filename):
 
 def main(argv):
     ref_seq_filename = argv[1]
-    algorithm = argv[2]
-    num_frames = int(argv[3])
+    num_frames = int(argv[2])
+    algorithm = argv[3]
 
     addresses = get_addresses(ref_seq_filename)
 
