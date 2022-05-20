@@ -1,2 +1,2 @@
 #!/bin/bash
-./memSim opt2.txt 5 OPT
+./memSim fifo3.txt 5 FIFO

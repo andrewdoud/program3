@@ -41,8 +41,8 @@ def opt(next_addresses, frame_p):
 
 def mem_sim(addresses, num_frames, backing_store, algorithm):
     ## Initialize everything
-    
-    faults = fault_rate = hits = misses = hit_rate = 0 # Metrics
+    # init metrics
+    faults = fault_rate = hits = misses = hit_rate = 0
 
     # init tlb
     tlb = [(None, None)] * TLB_SIZE
@@ -75,15 +75,11 @@ def mem_sim(addresses, num_frames, backing_store, algorithm):
             next_f = lru(lru_q)
         elif algorithm == 'OPT':
             next_f = opt(addresses[i+1:], frame_p)
-        
-        print(frame_p)
-        print(tlb)
 
         # Try to grab entry from tlb
         tlb_i = search_tlb(tlb, p) # (p, f)
         if tlb_i == -1 or tlb[tlb_i][1] is None: # if miss
             misses += 1
-            print('miss')
 
             # Check if valid in the page table
             if page_table[p][1] == 1: # if already in physical mem
@@ -101,11 +97,10 @@ def mem_sim(addresses, num_frames, backing_store, algorithm):
                 hex_data = phys_entry[1]
 
                 # Print all the stuff
-                print(f'{addr}, {ref_byte_int}, {p}, {f}, {hex_data}')
+                print(f'{addr}, {ref_byte_int}, {f}, {hex_data}')
 
             else: # if not in physical mem yet, replace curr frame in physical mem
                 faults += 1
-                print('fault')
                 f = next_f
 
                 # Retrieve data from backing store
@@ -118,7 +113,7 @@ def mem_sim(addresses, num_frames, backing_store, algorithm):
                 ref_byte_int = int.from_bytes(ref_byte, 'little', signed=True)
 
                 # Print all the stuff
-                print(f'{addr}, {ref_byte_int}, {p}, {f}, {hex_data}')
+                print(f'{addr}, {ref_byte_int}, {f}, {hex_data}')
 
                 # Update page table
                 page_table[p] = (f, 1)
@@ -161,7 +156,6 @@ def mem_sim(addresses, num_frames, backing_store, algorithm):
 
         else: # if hit
             hits += 1
-            print('hit')
 
             # Find in page table
             entry = tlb[tlb_i]
@@ -177,7 +171,7 @@ def mem_sim(addresses, num_frames, backing_store, algorithm):
             ref_byte_int = phys_entry[0]
             hex_data = phys_entry[1]
             # Print all the stuff
-            print(f'{addr}, {ref_byte_int}, {p}, {f}, {hex_data}')
+            print(f'{addr}, {ref_byte_int}, {f}, {hex_data}')
 
     # Calc metrics
     fault_rate = faults / (misses + hits)
