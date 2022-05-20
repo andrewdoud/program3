@@ -131,6 +131,8 @@ def mem_sim(addresses, num_frames, backing_store, algorithm):
                     if old_p_tlb != -1:
                         tlb.pop(old_p_tlb) # Clear the old tlb entry (if exists)
                         tlb.append((None, None))
+                        if old_p_tlb < tlb_p:
+                            tlb_p -= 1
 
                 # Make f point to new p
                 frame_p[f] = p
